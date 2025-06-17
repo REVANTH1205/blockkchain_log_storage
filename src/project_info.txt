@@ -1,0 +1,1258 @@
+this project file status .....
+
+
+All basic things has been done .. like storing the fiiles and dowloading and delete the files 
+
+
+Encryption and decryption is added to the code ::  Key :MySecretKey123
+Integrity check has added ::
+RBAC system has been  added :: Roles ( Admin - full access  , Normal User - only  download  access )
+Log audit system has been added ...
+
+Download Key ::  MySecretKey123
+
+Deletion Key ::  CompleteDeletion
+
+-----------------------
+
+Contract ::
+pragma solidity ^0.5.0;
+pragma experimental ABIEncoderV2;
+
+
+contract DStorage {
+    string public name = "DStorage";
+    uint public fileCount = 0;
+    mapping(uint => File) public files;
+    mapping(uint => bytes32) public fileIntegrityHashes;
+    mapping(address => string) public roles; // Role-Based Access Control
+
+    struct File {
+        uint fileId;
+        string fileHash;
+        uint fileSize;
+        string fileType;
+        string fileName;
+        string fileDescription;
+        uint uploadTime;
+        address payable uploader;
+    }
+
+    // 🛡️ Audit Log Structure
+    struct AuditLog {
+        uint timestamp;
+        address user;
+        string userRole;
+        string action;
+        string fileName;
+        string fileHash;
+    }
+
+    AuditLog[] public auditLogs; // Array to store audit logs
+
+    // 📌 Events
+    event FileUploaded(uint fileId, string fileHash, uint fileSize, string fileType, string fileName, string fileDescription, uint uploadTime, address payable uploader);
+    event FileDeleted(uint fileId, string fileName, address deletedBy);
+    event FileViewed(uint fileId, string fileName, address viewedBy);
+    event RoleAssigned(address indexed user, string role);
+    event ActionLogged(uint timestamp, address user, string userRole, string action, string fileName, string fileHash); // Audit Log Event
+
+    constructor() public {
+        roles[msg.sender] = "Admin"; // Contract deployer is Admin
+    }
+
+    // 🔑 Modifiers
+    modifier onlyAdmin() {
+        require(keccak256(bytes(roles[msg.sender])) == keccak256(bytes("Admin")), "Access Denied: Not an Admin");
+        _;
+    }
+
+    modifier onlyUserOrAdmin() {
+        require(
+            keccak256(bytes(roles[msg.sender])) == keccak256(bytes("Admin")) || 
+            keccak256(bytes(roles[msg.sender])) == keccak256(bytes("User")), 
+            "Access Denied: Not a User or Admin"
+        );
+        _;
+    }
+
+    modifier onlyUploaderOrAdmin(uint _fileId) {
+        require(
+            msg.sender == files[_fileId].uploader || keccak256(bytes(roles[msg.sender])) == keccak256(bytes("Admin")),
+            "Access Denied: Only uploader or Admin can delete"
+        );
+        _;
+    }
+
+    // 👤 Assign Roles
+    function setRole(address _user, string memory _role) public onlyAdmin {
+        require(
+            keccak256(bytes(_role)) == keccak256(bytes("Admin")) ||
+            keccak256(bytes(_role)) == keccak256(bytes("User")) ||
+            keccak256(bytes(_role)) == keccak256(bytes("Viewer")), 
+            "Invalid Role: Use 'Admin', 'User', or 'Viewer'"
+        );
+        roles[_user] = _role;
+        emit RoleAssigned(_user, _role);
+    }
+
+    function getRole(address _user) public view returns (string memory) {
+        return roles[_user];
+    }
+
+    // 📂 Upload File (Logs Upload Action)
+    function uploadFile(string memory _fileHash, uint _fileSize, string memory _fileType, string memory _fileName, string memory _fileDescription, bytes32 _integrityHash) public onlyUserOrAdmin {
+        require(bytes(_fileHash).length > 0, "Invalid file hash");
+        require(bytes(_fileType).length > 0, "Invalid file type");
+        require(bytes(_fileDescription).length > 0, "Invalid file description");
+        require(bytes(_fileName).length > 0, "Invalid file name");
+        require(msg.sender != address(0), "Invalid uploader address");
+        require(_fileSize > 0, "Invalid file size");
+
+        fileCount++;
+        files[fileCount] = File(fileCount, _fileHash, _fileSize, _fileType, _fileName, _fileDescription, block.timestamp, msg.sender);
+        fileIntegrityHashes[fileCount] = _integrityHash;
+
+        // 📝 Log Upload Action
+        auditLogs.push(AuditLog(block.timestamp, msg.sender, roles[msg.sender], "Uploaded", _fileName, _fileHash));
+        emit ActionLogged(block.timestamp, msg.sender, roles[msg.sender], "Uploaded", _fileName, _fileHash);
+
+        emit FileUploaded(fileCount, _fileHash, _fileSize, _fileType, _fileName, _fileDescription, block.timestamp, msg.sender);
+    }
+
+    // 🔍 View File (Logs View Action)
+    function viewFile(uint _fileId) public {
+        require(_fileId > 0 && _fileId <= fileCount, "Invalid file ID");
+
+        File memory file = files[_fileId];
+        
+        // 📝 Log View Action
+        auditLogs.push(AuditLog(block.timestamp, msg.sender, roles[msg.sender], "Viewed", file.fileName, file.fileHash));
+        emit ActionLogged(block.timestamp, msg.sender, roles[msg.sender], "Viewed", file.fileName, file.fileHash);
+
+        emit FileViewed(_fileId, file.fileName, msg.sender);
+    
+    }
+
+     // 🧾 Record Download (NEW)
+    function recordDownload(uint _fileId) public {
+        require(_fileId > 0 && _fileId <= fileCount, "Invalid file ID");
+        File memory file = files[_fileId];
+
+        auditLogs.push(AuditLog(block.timestamp, msg.sender, roles[msg.sender], "Downloaded", file.fileName, file.fileHash));
+        emit ActionLogged(block.timestamp, msg.sender, roles[msg.sender], "Downloaded", file.fileName, file.fileHash);
+    }
+
+    //  Get File Integrity Hash
+    function getFileIntegrityHash(uint _fileId) public view returns (bytes32) {
+        require(_fileId > 0 && _fileId <= fileCount, "Invalid file ID");
+        return fileIntegrityHashes[_fileId];
+    }
+
+    //  Verify File Integrity
+    function verifyFileIntegrity(uint _fileId, bytes32 _computedHash) public view returns (bool) {
+        require(_fileId > 0 && _fileId <= fileCount, "Invalid file ID");
+        return fileIntegrityHashes[_fileId] == _computedHash;
+    }
+
+    // 🗑️ Delete File (Logs Delete and Unauthorized Delete Attempt)
+    function deleteFile(uint _fileId) public onlyUploaderOrAdmin(_fileId) {
+        require(_fileId > 0 && _fileId <= fileCount, "Invalid file ID");
+
+        File memory file = files[_fileId];
+
+        files[_fileId].fileHash = "";
+        files[_fileId].fileName = "Deleted File";
+        files[_fileId].fileDescription = "This file has been deleted.";
+        files[_fileId].fileSize = 0;
+        files[_fileId].uploadTime = 0;
+
+        delete fileIntegrityHashes[_fileId]; 
+        
+        // 📝 Log Delete Action
+        auditLogs.push(AuditLog(block.timestamp, msg.sender, roles[msg.sender], "Deleted", file.fileName, file.fileHash));
+        emit ActionLogged(block.timestamp, msg.sender, roles[msg.sender], "Deleted", file.fileName, file.fileHash);
+
+        emit FileDeleted(_fileId, file.fileName, msg.sender);
+    }
+
+    // 📜 Get Audit Logs (Only Admin Can View)
+    function getAuditLogs() public view onlyAdmin returns (
+        uint[] memory,
+        address[] memory,
+        string[] memory,
+        string[] memory,
+        string[] memory,
+        string[] memory
+    ) {
+        uint len = auditLogs.length;
+        uint[] memory timestamps = new uint[](len);
+        address[] memory users = new address[](len);
+        string[] memory rolesList = new string[](len);
+        string[] memory actions = new string[](len);
+        string[] memory fileNames = new string[](len);
+        string[] memory fileHashes = new string[](len);
+
+        for (uint i = 0; i < len; i++) {
+            AuditLog storage log = auditLogs[i];
+            timestamps[i] = log.timestamp;
+            users[i] = log.user;
+            rolesList[i] = log.userRole;
+            actions[i] = log.action;
+            fileNames[i] = log.fileName;
+            fileHashes[i] = log.fileHash;
+        }
+
+        return (timestamps, users, rolesList, actions, fileNames, fileHashes);
+    }
+}
+
+-----------------------------------------------------------------------------
+App.js::
+
+
+import DStorage from '../abis/DStorage.json';
+import React, { Component } from 'react';
+import './App.css';
+import Web3 from 'web3';
+import {convertBytes} from './helpers'
+import './App.css';
+import CryptoJS from "crypto-js";
+import logo from './blockimage.png';
+
+
+class App extends Component {
+
+  async componentDidMount() {
+    await this.loadWeb3();
+    await this.loadBlockchainData();  // Ensures contract is loaded
+
+    // Load audit logs only if the user is an Admin and the contract is loaded
+    if (this.state.userRole === "Admin" && this.state.contract) {
+        console.log("📜 Loading audit logs...");
+        await this.loadAuditLogs();
+    }
+
+    // Handle account changes dynamically
+    window.ethereum.on("accountsChanged", async (accounts) => {
+        if (accounts.length > 0) {
+            console.log("🔄 Account changed:", accounts[0]);
+            this.setState({ account: accounts[0] }, async () => {
+                await this.loadBlockchainData();  // Reload role & permissions
+
+                if (this.state.userRole === "Admin" && this.state.contract) {
+                    console.log("📜 Reloading audit logs...");
+                    await this.loadAuditLogs();
+                }
+            });
+        }
+    });
+}
+
+  constructor(props) {
+    super(props);
+    this.state = {
+      memeHash: '',
+      buffer: null,
+      account: '',
+      dstorage: null,
+      userRole: null,
+      auditSearchQuery: "",
+      files: [],
+      auditLogs: [],
+      selectedFile: null, 
+      filesCount: 0
+    };
+    this.getRole = this.getRole.bind(this); // Bind the function to 'this'
+  }
+
+  async loadWeb3() {
+    if (window.ethereum) {
+      window.web3 = new Web3(window.ethereum);
+      await window.ethereum.enable();
+    } else if (window.web3) {
+      window.web3 = new Web3(window.web3.currentProvider);
+    } else {
+      window.alert('Non-Ethereum browser detected. You should consider trying MetaMask!');
+    }
+  }
+
+  getRole() {
+    console.log("🔍 User Role:", this.state.userRole);
+}
+
+async loadBlockchainData() {
+  try {
+      if (!window.ethereum) {
+          console.error("❌ MetaMask is not installed!");
+          alert("Please install MetaMask.");
+          return;
+      }
+
+      const web3 = new Web3(window.ethereum);
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+
+      const accounts = await web3.eth.getAccounts();
+      if (accounts.length === 0) {
+          console.error("❌ No accounts found. Please connect MetaMask.");
+          alert("No accounts detected. Please log in to MetaMask.");
+          return;
+      }
+
+      console.log("🔹 Accounts:", accounts);
+      this.setState({ account: accounts[0] });
+
+      const networkId = await web3.eth.net.getId();
+      const networkData = DStorage.networks[networkId];
+
+      if (!networkData) {
+          console.error("❌ DStorage contract not deployed to detected network.");
+          alert("DStorage contract not deployed to detected network.");
+          return;
+      }
+
+      const dstorage = new web3.eth.Contract(DStorage.abi, networkData.address);
+
+      if (!dstorage) {
+          console.error("❌ Smart contract failed to load!");
+          return;
+      }
+
+      console.log("✅ Contract Loaded:", dstorage);
+      this.setState({ dstorage, contract: dstorage });
+
+      const fileCount = await dstorage.methods.fileCount().call();
+      this.setState({ filesCount: fileCount });
+
+      let files = [];
+      for (let i = 1; i <= fileCount; i++) {
+          const file = await dstorage.methods.files(i).call();
+          if (file.fileHash) {
+              files.push(file);
+          }
+      }
+      this.setState({ files });
+
+      const userRole = await dstorage.methods.getRole(accounts[0]).call();
+      console.log("🔍 Retrieved Role:", userRole || "No Role Found");
+
+      const isAuthorized = userRole === "Admin";
+
+      this.setState({
+          userRole: userRole || "Normal User",
+          isAuthorized
+      });
+
+      console.log("👤 User Role:", userRole);
+      console.log("🔓 Authorized:", isAuthorized);
+
+      if (isAuthorized) {
+          await this.loadAuditLogs();  // Only Admin can load audit logs
+      }
+
+  } catch (error) {
+      console.error("❌ Error loading blockchain data:", error);
+  }
+}
+
+  // 🔒 Check if user is authorized before performing actions
+  checkAuthorization(action) {
+    if (!this.state.isAuthorized) {
+      alert(`❌ Unauthorized: You do not have permission to ${action}.`);
+      return false;
+    }
+    return true;
+  }
+   
+// 🔥 Fetch Audit Logs
+  async loadAuditLogs() {
+  if (!this.state.contract || !this.state.account) {
+      console.error("⚠️ Contract or account not loaded!");
+      return;
+  }
+
+  try {
+      console.log("📜 Fetching audit logs...");
+
+      const logs = await this.state.contract.methods.getAuditLogs().call({
+          from: this.state.account // ✅ Required for `onlyAdmin`
+      });
+
+      let auditLogs = [];
+      for (let i = 0; i < logs[0].length; i++) {
+        auditLogs.push({
+          timestamp: new Date(parseInt(logs[0][i]) * 1000).toLocaleString(), // convert to readable format
+          user: logs[1][i],
+          userRole: logs[2][i],
+          action: logs[3][i],
+          fileName: logs[4][i],
+          fileHash: logs[5][i]
+      });
+      }
+
+      console.log("📜 Retrieved logs:", auditLogs);
+      this.setState({ auditLogs });
+
+  } catch (error) {
+      console.error("❌ Error fetching audit logs:", error);
+  }
+}
+
+  captureFile = (event) => {
+    event.preventDefault();
+    const file = event.target.files[0];
+
+    if (!file) {
+        console.log("❌ No file selected!");
+        return;
+    }
+
+    console.log(`📂 File Selected: ${file.name}`);
+
+    const reader = new FileReader();
+    reader.readAsArrayBuffer(file); 
+
+    reader.onloadend = async () => {
+        console.log("📖 Reading file as ArrayBuffer...");
+
+        const fileBuffer = new Uint8Array(reader.result);
+        console.log("📜 File Buffer Created:", fileBuffer);
+
+        // 🔍 Compute SHA-256 hash for integrity check
+        const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        console.log("🛡️ Computed File Hash:", fileHash);
+
+        const secretKey = "MySecretKey123";
+
+        let binaryString = "";
+        const chunkSize = 1024;
+        for (let i = 0; i < fileBuffer.length; i += chunkSize) {
+            binaryString += String.fromCharCode(...fileBuffer.slice(i, i + chunkSize));
+        }
+
+        const base64Data = btoa(binaryString);
+        const encryptedData = CryptoJS.AES.encrypt(base64Data, secretKey).toString();
+        console.log("🔒 Encrypted File Data:", encryptedData.substring(0, 50) + "...");
+
+        this.setState({
+            buffer: encryptedData,
+            fileName: file.name,
+            originalHash: fileHash  // Save original hash in state
+        }, () => {
+            console.log("✅ State Updated with Encrypted File and Hash!");
+        });
+    };
+
+    reader.onerror = (error) => {
+        console.error("❌ File Read Error:", error);
+    };
+};
+
+  handleFileChange = (event) => {
+    const file = event.target.files[0]; // Get the first selected file
+    if (file) {
+      this.setState({ selectedFile: file });
+    }
+  };
+
+  handleUpload = () => {
+    if (!this.state.selectedFile) {
+      alert("Please select a file first!");
+      return;
+    }
+
+    // Your existing upload logic here
+    console.log("Uploading:", this.state.selectedFile.name);
+  };
+
+  onSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!this.state.buffer || !this.state.originalHash) {
+      alert("❌ Please select a file before submitting!");
+      return;
+    }
+
+    if (!this.checkAuthorization("upload files")) return;
+
+    try {
+      console.log("🚀 Uploading encrypted file to Pinata...");
+
+      const formData = new FormData();
+      const blob = new Blob([this.state.buffer], { type: "text/plain" });
+      formData.append("file", blob, this.state.fileName);
+
+      const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI0YTFjZTI2Ny0wOTQ2LTQwNjctYTZkZC05MzllZmUwMjU1MDAiLCJlbWFpbCI6ImhhY2s1NTc3NEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGluX3BvbGljeSI6eyJyZWdpb25zIjpbeyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJGUkExIn0seyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJOWUMxIn1dLCJ2ZXJzaW9uIjoxfSwibWZhX2VuYWJsZWQiOmZhbHNlLCJzdGF0dXMiOiJBQ1RJVkUifSwiYXV0aGVudGljYXRpb25UeXBlIjoic2NvcGVkS2V5Iiwic2NvcGVkS2V5S2V5IjoiMTRkODA5ZTYyODc4Y2E3NzRmNmQiLCJzY29wZWRLZXlTZWNyZXQiOiJmMjNkYmViMDRiMjYwYzU0ZTY0NGUwNWU2YTM3MWJlYTExNGQ5OTAzM2IxMTFlN2UzZWVkNzIzMmZkYjQyZTA3IiwiZXhwIjoxNzc1MDQzMTQ5fQ.hBsDhbKyZC94gDUnmK0tzIRRtZ_a8R4e51kyyTgchLU`,
+        },
+        body: formData
+      });
+
+      const result = await response.json();
+      if (result.IpfsHash) {
+        console.log("✅ File uploaded to IPFS:", result);
+
+        const { dstorage, account, fileName, originalHash } = this.state;
+        const fileHash = result.IpfsHash;
+        const fileSize = result.PinSize;
+        const fileType = result.MimeType || "unknown";
+        const fileDescription = "Encrypted Log File";
+
+        console.log("📜 Storing encrypted file and hash on Ethereum...");
+        await dstorage.methods.uploadFile(fileHash, fileSize, fileType, fileName, fileDescription, "0x" + originalHash)
+          .send({ from: account });
+
+        console.log("✅ File and hash stored on Ethereum blockchain!");
+        alert("Encrypted file uploaded successfully!");
+
+        this.loadBlockchainData();
+      } else {
+        console.error("❌ Upload failed:", result);
+      }
+    } catch (error) {
+      console.error("❌ IPFS Upload Error:", error);
+    }
+  };
+
+ deleteFile = async (fileId) => {
+    if (!this.checkAuthorization("delete files")) return;
+  
+    try {
+      console.log("🗑️ Deleting file:", fileId);
+      await this.state.dstorage.methods.deleteFile(fileId).send({ from: this.state.account });
+      alert("✅ File deleted successfully!");
+      this.loadBlockchainData();
+    } catch (error) {
+      console.error("❌ Error deleting file:", error);
+  
+      // 🔐 If error message indicates access control failure
+      if (error.message.includes("Access Denied: Only uploader or Admin can delete")) {
+        alert("🚫 You are not authorized to delete this file. This action has been logged.");
+      } else {
+        alert("❌ An error occurred while trying to delete the file.");
+      }
+    }
+  };
+
+  promptForKeyAndDownload = async (fileHash, fileName, fileId) => {
+    try {
+      console.log("🔍 Fetching stored hash from blockchain...");
+      
+      const storedHash = await this.fetchStoredIntegrityHash(fileId);
+      if (!storedHash) {
+        console.error("❌ No integrity hash found on the blockchain!");
+        return;
+      }
+
+      console.log("📜 Stored Hash:", storedHash);
+
+      const userKey = prompt("Enter decryption key:");
+      if (!userKey) return;
+
+      await this.downloadAndDecrypt(fileId, fileHash, fileName, userKey, storedHash);
+    } catch (error) {
+      console.error("❌ Error in promptForKeyAndDownload:", error);
+    }
+  };
+
+  // ✅ Fetch the stored hash from blockchain
+  fetchStoredIntegrityHash = async (fileId) => {
+    try {
+      const storedHash = await this.state.dstorage.methods.getFileIntegrityHash(fileId).call();
+      console.log("📜 Retrieved Hash from Blockchain:", storedHash);
+      return storedHash;
+    } catch (error) {
+      console.error("❌ Error fetching integrity hash:", error);
+      return null;
+    }
+  };
+
+  
+  // ✅ Fetch audit logs with correct mapping
+  fetchAuditLogs = async (contract, account) => {
+  const result = await contract.methods.getAuditLogs().call({ from: account });
+
+  const logs = result[0].map((_, i) => ({
+    timestamp: result[0][i],
+    user: result[1][i],
+    userRole: result[2][i] ||'Normal User' ,
+    action: result[3][i],
+    fileName: result[4][i],
+    fileHash: result[5][i]
+  }));
+
+  return logs;
+  };
+
+// ✅ Download audit logs as CSV with userRole and readable timestamp
+  downloadAuditLogsCSV = (logs) => {
+  const headers = ['Timestamp', 'User Address', 'User Role', 'Action', 'File Name', 'File Hash'];
+
+  const rows = logs.map(log => [
+    new Date(log.timestamp * 1000).toLocaleString(), // readable timestamp
+    log.user,
+    log.userRole,
+    log.action,
+    log.fileName,
+    log.fileHash
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map(row => row.map(field => `"${field}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute('download', 'audit-logs.csv');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+   };
+
+// Inside a React class component
+  downloadAndDecrypt = async (fileId, fileHash, fileName, userKey, storedHash) => {
+  try {
+    console.log("⬇️ Downloading encrypted file...");
+
+    const response = await fetch(`https://gateway.pinata.cloud/ipfs/${fileHash}`);
+    const encryptedText = await response.text();
+
+    console.log("🔓 Attempting decryption...");
+    const decryptedBytes = CryptoJS.AES.decrypt(encryptedText, userKey);
+    const decryptedBase64 = decryptedBytes.toString(CryptoJS.enc.Utf8);
+
+    if (!decryptedBase64) {
+      alert("❌ Decryption failed! Incorrect key or corrupted file.");
+      return;
+    }
+
+    console.log("✅ Decryption successful, converting Base64 back to binary...");
+
+    // Convert Base64 back to binary
+    const binaryString = atob(decryptedBase64);
+    const byteArray = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      byteArray[i] = binaryString.charCodeAt(i);
+    }
+
+    // 🔍 Compute SHA-256 hash for integrity verification
+    const hashBuffer = await crypto.subtle.digest("SHA-256", byteArray);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const computedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Normalize stored hash (remove "0x" if present)
+    const normalizedStoredHash = storedHash.startsWith("0x") ? storedHash.slice(2) : storedHash;
+    const normalizedComputedHash = computedHash.toLowerCase();
+
+    console.log("🛡️ Computed Hash:", normalizedComputedHash);
+    console.log("📜 Stored Hash:", normalizedStoredHash);
+
+    // ✅ Compare hashes
+    if (normalizedComputedHash !== normalizedStoredHash) {
+      alert(`⚠️ Integrity Check Failed!\nStored Hash: ${normalizedStoredHash}\nComputed Hash: ${normalizedComputedHash}\n\nThe file has been modified or tampered with.`);
+      console.error("❌ File integrity compromised!");
+      return;
+    }
+
+    console.log("✅ Integrity check passed! File is original.");
+    alert(`✅ Integrity Check Passed!\nStored Hash: ${normalizedStoredHash}\nComputed Hash: ${normalizedComputedHash}\n\nThe file is authentic and has not been modified.`);
+
+    // 1️⃣ Create and trigger file download
+    const blob = new Blob([byteArray], { type: "application/octet-stream" });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.setAttribute("download", fileName);
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+      link.remove();
+    }, 100);
+
+    console.log("✅ File decrypted and downloaded!");
+    alert("✅ File decrypted and saved successfully!");
+
+    // 2️⃣ AFTER download, record the download action on the blockchain
+    try {
+      const { dstorage, account } = this.state;
+      await dstorage.methods.recordDownload(fileId).send({ from: account });
+      console.log("📜 Download action logged on blockchain.");
+    } catch (logError) {
+      console.error("⚠️ Failed to log download on blockchain:", logError);
+    }
+
+  } catch (error) {
+    console.error("❌ Error downloading or decrypting file:", error);
+    alert("❌ An error occurred while decrypting the file.");
+  }
+  };
+
+render() {
+  return (
+    <div>
+      <nav className="navbar navbar-dark fixed-top bg-dark shadow">
+  <a 
+    className="navbar-brand col-sm-3 col-md-2 mr-auto ml-3 d-flex align-items-center"
+    href="https://github.com/REVANTH1205" 
+    target="_blank" 
+    rel="noopener noreferrer"
+  >
+    {/* Logo Image */}
+    <img 
+      src={logo}  // ✅ Update this path to your actual logo location
+      alt="Logo" 
+      style={{ width: '32px', height: '32px', marginRight: '10px', borderRadius: '50%' }}
+    />
+    LogCrypt - A Blockchain Based Log File Storage System
+  </a>
+
+  <ul className="navbar-nav px-3">
+    <li className="nav-item text-nowrap">
+      <small className="text-white d-flex align-items-center">
+        <a 
+          href={`https://etherscan.io/address/${this.state.account}`} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-white text-decoration-none"
+          style={{ marginRight: "8px" }}
+        >
+          {this.state.account ? this.state.account : "0x0"}
+        </a>
+        <span role="img" aria-label="User" style={{ fontSize: "18px" }}>👨‍💻</span>
+      </small>
+    </li>
+  </ul>
+</nav>
+
+
+      <div className="container-fluid mt-5">
+        <div className="row">
+          <main role="main" className="col-lg-12 d-flex justify-content-center align-items-center text-center">
+            <div className="content mr-auto ml-auto">
+              <p>&nbsp;</p>
+              {/*<button onClick={this.getRole}>Get Role</button>;*/}
+              <h2>Log File Storgae System</h2>
+             
+              <p>&nbsp;</p>
+              <h5>Role: {this.state.userRole}</h5>
+              { this.state.userRole === "Admin" && (
+              <form onSubmit={this.onSubmit} className="file-input-container">
+                <label htmlFor="file-upload" className="file-label">
+                  <span role="img" aria-label="Choose File">📂</span> Choose File
+                </label>
+                <input 
+                  id="file-upload" 
+                  type="file" 
+                  onChange={(event) => {
+                    this.captureFile(event);
+                    this.setState({ selectedFile: event.target.files[0] });
+                  }} 
+                  className="custom-file-input" 
+                />
+                {this.state.selectedFile && (
+                  <p className="selected-file">
+                    <strong>Selected File:</strong> {this.state.selectedFile.name}
+                  </p>
+                )}
+                <button type="submit" className="upload-button">
+                  <span role="img" aria-label="Upload">🚀</span> Upload
+                </button>
+              </form>
+            ) }
+
+              <h2 className="mt-5"><span role="img" aria-label="Choose File">📝 </span> Log Files</h2>
+              <p>&nbsp;</p>
+
+              {/* 🔍 Search Bar */}
+              <input
+                type="text"
+                placeholder="🔍 Search files... ( Search By Name , Hash or Timestamp )"
+                className="search-bar"
+                value={this.state.searchQuery}
+                onChange={(event) => this.setState({ searchQuery: event.target.value })}
+              />
+
+              <div className="table-responsive">
+                <table className="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>File No.</th>
+                      <th>File Name</th>
+                      <th>IPFS Hash</th>
+                      <th>Size </th>
+                      <th>Timestamp</th>
+                      <th>View</th>
+                      <th>Delete</th>
+                      <th>Download</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {this.state.files
+                      .filter(file => 
+                        file.fileName.toLowerCase().includes((this.state.searchQuery || '').toLowerCase()) ||
+                        file.fileHash.toLowerCase().includes((this.state.searchQuery || '').toLowerCase()) ||
+                        new Date(parseInt(file.uploadTime._hex, 16) * 1000).toLocaleString().includes((this.state.searchQuery || ''))
+                      )
+                      .map((file, index) => (
+                        <tr key={index}>
+                          <td>{index + 1}</td>
+                          <td>{file.fileName}</td>
+                          <td 
+                            onClick={() => {
+                              navigator.clipboard.writeText(file.fileHash);
+                              alert("✅ IPFS Hash copied to clipboard!");
+                            }} 
+                            style={{ cursor: "pointer", color: "#007bff", textDecoration: "underline" }} 
+                            title="Click to copy"
+                          >
+                            {file.fileHash.substring(0, 10)}...
+                          </td>
+                          <td>{convertBytes(parseInt(file.fileSize._hex, 16))}</td>
+                          <td>{new Date(parseInt(file.uploadTime._hex, 16) * 1000).toLocaleString()}</td>
+                          <td>
+                            <a href={`https://gateway.pinata.cloud/ipfs/${file.fileHash}`} target="_blank" rel="noopener noreferrer">
+                              <span role="img" aria-label="Open link">🔗</span> Open
+                            </a>
+                          </td>
+                          <td>
+                            <button 
+                              onClick={() => {
+                                this.deleteFile(parseInt(file.fileId._hex, 16));
+                              }} 
+                              className="delete-button"
+                            >
+                              <span role="img" aria-label="Delete">🗑️</span> Delete
+                            </button>
+                          </td>
+                          <td>
+                            <button 
+                              className="view-button" 
+                              onClick={() => this.promptForKeyAndDownload(file.fileHash, file.fileName, file.fileId)}
+                            >
+                              <span role="img" aria-label="Download">⬇️</span> Decrypt & Verify
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 📜 Audit Log Section (Only for Admins) */}
+              {this.state.userRole === "Admin" && (
+              <div className="table-responsive mt-5">
+                {/* Header Row: Title + Search + Download */}
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h2>
+                    <span role="img" aria-label="Scroll">📜</span> Audit Log
+                  </h2>
+                  <input
+                    type="text"
+                    className="form-control w-50"
+                    placeholder="🔍 Search Audit Log (Action, Role, File Name, Hash, Timestamp, Address)"
+                    value={this.state.auditSearchQuery}
+                    onChange={(e) => this.setState({ auditSearchQuery: e.target.value })}
+                  />
+                  <button
+                    className="btn btn-success ml-3"
+                    onClick={async () => {
+                      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                      const logs = await this.fetchAuditLogs(this.state.contract, accounts[0]);
+                      this.downloadAuditLogsCSV(logs);
+                    }}
+                  >
+                    <span role="img" aria-label="Download">⬇️</span> Download Audit Log (CSV)
+                  </button>
+                </div>
+
+                {/* Audit Log Table */}
+                <table className="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>User Address</th>
+                      <th>User Role</th>
+                      <th>Action</th>
+                      <th>File Name</th>
+                      <th>File Hash</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {this.state.auditLogs
+                      .filter((log) => {
+                        const query = this.state.auditSearchQuery.toLowerCase();
+                        return (
+                          log.user.toLowerCase().includes(query) ||
+                          (log.userRole || "Normal User").toLowerCase().includes(query) ||
+                          log.action.toLowerCase().includes(query) ||
+                          log.fileName.toLowerCase().includes(query) ||
+                          log.fileHash.toLowerCase().includes(query) ||
+                          log.timestamp.toLowerCase().includes(query)
+                        );
+                      })
+                      .map((log, index) => (
+                        <tr key={index}>
+                          <td>{index + 1}</td>
+                          <td>{log.user}</td>
+                          <td>{log.userRole || 'Normal User'}</td>
+                          <td>{log.action}</td>
+                          <td>{log.fileName}</td>
+                          <td
+                            onClick={() => {
+                              navigator.clipboard.writeText(log.fileHash);
+                              alert("✅ File Hash copied!");
+                            }}
+                            style={{ cursor: "pointer", color: "#007bff", textDecoration: "underline" }}
+                            title="Click to copy"
+                          >
+                            {log.fileHash.substring(0, 10)}...
+                          </td>
+                          <td>{log.timestamp}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}
+}
+export default App;
+
+
+-----------------------------------------------------------------------------
+App.css::
+/* Navbar Styling */
+.navbar {
+    padding: 10px 20px;  /* Reduced padding */
+    background: #343a40; /* Dark color */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    height: 60px; /* Set a fixed height */
+    display: flex;
+    align-items: center;
+}
+
+.navbar-brand {
+  font-size: 1.3rem; /* Slightly smaller */
+  font-weight: lighter;
+  color: white !important;
+  margin-left: 10px;
+}
+
+.account-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem; /* Adjusted font size */
+    color: white;
+}
+
+.user-icon {
+    font-size: 18px; 
+    margin-left: 8px;
+}
+
+
+/* Hover effect for NavBar links */
+.navbar a:hover {
+    text-decoration: underline;
+    opacity: 0.8;
+}
+
+
+  /* Center Content */
+.container-fluid {
+    display: flex;
+    justify-content: center; 
+    align-items: center; 
+    min-height: 100vh; 
+    text-align: center; 
+  }
+  
+  /* Expanded Main Content Box */
+  .content {
+    width: 200%; /* Increase width */
+    max-width: 1600px; /* Allow it to grow on large screens */
+    background: #fff;
+    padding: 30px; /* Increased padding */
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  
+  /* File Upload Section */
+  .upload-container {
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    margin: auto;
+  }
+  
+  .upload-button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  
+  .upload-button:hover {
+    background-color: #0056b3;
+  }
+  
+
+  /* Search Bar */
+ .search-bar {
+  width: 60%;
+  padding: 10px;
+  margin: 10px auto;
+  display: block;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+
+ /* Table Container */
+.table-container {
+    width: 100%;
+    overflow-x: auto; /* Allows horizontal scrolling if needed */
+    margin-top: 20px;
+    padding: 10px;
+  }
+  
+  /* Table Styling */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    border: 1px  solid black; /* Light grey border */
+    overflow: hidden; /* Prevents border-radius from affecting inner elements */
+  }
+  
+  /* Table Headers */
+  th {
+    background-color: #007bff;
+    color: white;
+    font-weight: bold;
+    padding: 15px;
+    text-align: center;
+    border-bottom: 2px solid #d3d3d3; /* Light grey border */
+  }
+  
+  /* Table Rows */
+  td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #d3d3d3; /* Light grey border */
+  }
+  
+  /* Alternating Row Colors */
+  tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+  }
+  
+  /* Hover Effect */
+  tbody tr:hover {
+    background-color: #e9ecef;
+  }
+  
+/* View (Download) Button */
+.view-button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none; /* Remove underline */
+    display: inline-block; /* Ensure hover works properly */
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+  
+  .view-button:hover {
+    background-color: #218838;
+    transform: scale(1.05);
+  }
+  
+  /* Delete Button */
+  .delete-button {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 10px; /* Reduced padding */
+    font-size: 14px; /* Smaller text */
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+  
+  .delete-button:hover {
+    background-color: #c82333;
+    transform: scale(1.05);
+  }
+  
+  
+  /* File Upload Section */
+.file-input-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    margin: auto;
+  }
+  
+  /* Custom Styling for File Input */
+  .custom-file-input {
+    display: none; /* Hide default input */
+  }
+  
+  .file-label {
+    background-color: #007bff;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.3s;
+    text-align: center;
+    display: inline-block;
+  }
+  
+  .file-label:hover {
+    background-color: #0056b3;
+  }
+  
+  /* Submit Button */
+  .upload-button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.3s;
+    text-transform: uppercase;
+  }
+  
+  .upload-button:hover {
+    background-color: #218838;
+  }
+  
+-----------------------------------------------------------------------------
+helper.js::
+export function convertBytes(bytes) {
+    var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Byte';
+    var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
+ }
+
+
+ -----------------------------------------------------------------------------
+truffle-config.js ::
+
+require('babel-register');
+require('babel-polyfill');
+
+
+module.exports = {
+  networks: {
+    development: {
+      host: "127.0.0.1",
+      port: 7545,
+      network_id: "*" // Match any network id
+    },
+  },
+  contracts_directory: './src/contracts/',
+  contracts_build_directory: './src/abis/',
+  compilers: {
+    solc: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }
+  }
+}
+ -----------------------------------------------------------------------------
+
+package.json ::
+
+{
+  "name": "eth-marketplace",
+  "version": "0.1.0",
+  "description": "An Ethereum Marketplace",
+  "author": "gregory@dappuniversity.com",
+  "dependencies": {
+    "@babel/core": "^7.26.10",
+    "babel-polyfill": "6.26.0",
+    "babel-preset-env": "1.7.0",
+    "babel-preset-es2015": "6.24.1",
+    "babel-preset-stage-2": "6.24.1",
+    "babel-preset-stage-3": "6.24.1",
+    "babel-register": "6.26.0",
+    "bootstrap": "5.3.3",
+    "chai": "4.2.0",
+    "chai-as-promised": "7.1.1",
+    "chai-bignumber": "3.0.0",
+    "crypto-js": "^4.2.0",
+    "eth-marketplace": "file:",
+    "identicon.js": "^2.3.3",
+    "ipfs-http-client": "^50.1.2",
+    "kubo-rpc-client": "^4.1.0",
+    "lucide-react": "^0.487.0",
+    "moment": "^2.30.1",
+    "react": "16.8.4",
+    "react-bootstrap": "1.0.0-beta.5",
+    "react-dom": "16.8.4",
+    "react-scripts": "2.1.3",
+    "react-toastify": "^11.0.5",
+    "truffle": "5.0.5",
+    "web3": "1.0.0-beta.55"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": [
+    ">0.2%",
+    "not dead",
+    "not ie <= 11",
+    "not op_mini all"
+  ]
+}
+

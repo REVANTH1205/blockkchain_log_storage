@@ -1,0 +1,230 @@
+/* Navbar Styling */
+.navbar {
+    padding: 10px 20px;  /* Reduced padding */
+    background: #343a40; /* Dark color */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    height: 60px; /* Set a fixed height */
+    display: flex;
+    align-items: center;
+}
+
+.navbar-brand {
+  font-size: 1.3rem; /* Slightly smaller */
+  font-weight: lighter;
+  color: white !important;
+  margin-left: 10px;
+}
+
+.account-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem; /* Adjusted font size */
+    color: white;
+}
+
+.user-icon {
+    font-size: 18px; 
+    margin-left: 8px;
+}
+
+
+/* Hover effect for NavBar links */
+.navbar a:hover {
+    text-decoration: underline;
+    opacity: 0.8;
+}
+
+
+  /* Center Content */
+.container-fluid {
+    display: flex;
+    justify-content: center; 
+    align-items: center; 
+    min-height: 100vh; 
+    text-align: center; 
+  }
+  
+  /* Expanded Main Content Box */
+  .content {
+    width: 200%; /* Increase width */
+    max-width: 1600px; /* Allow it to grow on large screens */
+    background: #fff;
+    padding: 30px; /* Increased padding */
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  
+  /* File Upload Section */
+  .upload-container {
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    margin: auto;
+  }
+  
+  .upload-button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  
+  .upload-button:hover {
+    background-color: #0056b3;
+  }
+  
+
+  /* Search Bar */
+ .search-bar {
+  width: 60%;
+  padding: 10px;
+  margin: 10px auto;
+  display: block;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+
+ /* Table Container */
+.table-container {
+    width: 100%;
+    overflow-x: auto; /* Allows horizontal scrolling if needed */
+    margin-top: 20px;
+    padding: 10px;
+  }
+  
+  /* Table Styling */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    border: 1px  solid black; /* Light grey border */
+    overflow: hidden; /* Prevents border-radius from affecting inner elements */
+  }
+  
+  /* Table Headers */
+  th {
+    background-color: #007bff;
+    color: white;
+    font-weight: bold;
+    padding: 15px;
+    text-align: center;
+    border-bottom: 2px solid #d3d3d3; /* Light grey border */
+  }
+  
+  /* Table Rows */
+  td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #d3d3d3; /* Light grey border */
+  }
+  
+  /* Alternating Row Colors */
+  tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+  }
+  
+  /* Hover Effect */
+  tbody tr:hover {
+    background-color: #e9ecef;
+  }
+  
+/* View (Download) Button */
+.view-button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none; /* Remove underline */
+    display: inline-block; /* Ensure hover works properly */
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+  
+  .view-button:hover {
+    background-color: #218838;
+    transform: scale(1.05);
+  }
+  
+  /* Delete Button */
+  .delete-button {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 10px; /* Reduced padding */
+    font-size: 14px; /* Smaller text */
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+  
+  .delete-button:hover {
+    background-color: #c82333;
+    transform: scale(1.05);
+  }
+  
+  
+  /* File Upload Section */
+.file-input-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    margin: auto;
+  }
+  
+  /* Custom Styling for File Input */
+  .custom-file-input {
+    display: none; /* Hide default input */
+  }
+  
+  .file-label {
+    background-color: #007bff;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.3s;
+    text-align: center;
+    display: inline-block;
+  }
+  
+  .file-label:hover {
+    background-color: #0056b3;
+  }
+  
+  /* Submit Button */
+  .upload-button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.3s;
+    text-transform: uppercase;
+  }
+  
+  .upload-button:hover {
+    background-color: #218838;
+  }
+  
