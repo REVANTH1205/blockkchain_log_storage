@@ -22,3 +22,6 @@ Open Ganache in your machine and connect it with the MetaMask wallet in your bro
 File  Download Key ::  MySecretKey123
 
 Deletion Key ::  CompleteDeletion
+
+ADMIN PAGE :
+![image](https://github.com/user-attachments/assets/8b41942b-a359-4a59-948a-ec4f05c80888)
